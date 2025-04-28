@@ -14,21 +14,14 @@ warnings.filterwarnings("ignore")
 
 def cluster_penalty(labels, n_samples):
     valid = labels[labels >= 0]
-    if valid.size == 0:
-        return 100
+    if valid.size < 2:
+        return 1e6
     counts = np.bincount(valid)
     return sum(1 for c in counts if c < 0.05 * n_samples or c > 0.8 * n_samples)
 
 
-def cluster_evaluation(X, model, method_name, reduction_method=None, reduction_params=None):
+def cluster_evaluation(X, model, method_name):
     try:
-        if reduction_method == 'PCA':
-            pca = PCA(n_components=reduction_params, random_state=42)
-            X = pca.fit_transform(X)
-        elif reduction_method == 'UMAP':
-            umap_model = umap.UMAP(n_components=reduction_params, random_state=42)
-            X = umap_model.fit_transform(X)
-
         n_samples = X.shape[0]
         if method_name == 'GaussianMixture':
             labels = model.fit(X).predict(X)
@@ -38,7 +31,7 @@ def cluster_evaluation(X, model, method_name, reduction_method=None, reduction_p
             labels = model.fit_predict(X)
             unique_labels = np.unique(labels)
             if len(unique_labels) < 2 or len(unique_labels) >= n_samples:
-                return -1e6, 'error', reduction_method, reduction_params
+                return -1e6, 'error'
 
             if method_name in ['KMeans', 'Birch', 'HDBSCAN']:
                 metric = 'calinski_harabasz_score'
@@ -51,10 +44,10 @@ def cluster_evaluation(X, model, method_name, reduction_method=None, reduction_p
                 metric = 'silhouette_score'
                 raw = silhouette_score(X, labels)
 
-        return raw - cluster_penalty(labels, n_samples), metric, reduction_method, reduction_params
+        return raw - cluster_penalty(labels, n_samples), metric
 
     except Exception:
-        return -1e6, 'error', reduction_method, reduction_params
+        return -1e6, 'error'
 
 
 def apply_dimensionality_reduction(X, method, trial):
@@ -72,7 +65,6 @@ def apply_dimensionality_reduction(X, method, trial):
 
 
 def objective(trial, X, method):
-    # Выбор метода для уменьшения размерности
     dim_reduction_method = trial.suggest_categorical('dimensionality_reduction', ['None', 'PCA', 'UMAP'])
 
     X_reduced = apply_dimensionality_reduction(X, dim_reduction_method, trial)
@@ -109,7 +101,7 @@ def objective(trial, X, method):
         try:
             model = GaussianMixture(**params, random_state=42)
         except Exception:
-            return -1e6
+            return -1e6, 'error'
 
     elif method == 'AgglomerativeClustering':
         params = {
@@ -179,17 +171,17 @@ def objective(trial, X, method):
     return cluster_evaluation(X_reduced, model, method)
 
 
-def run_experiment(X, method, n_trials=1000):
+def run_experiment(X, method, n_trials=10000):
     warnings.filterwarnings("ignore")
     study = optuna.create_study(direction='maximize')
     study.optimize(lambda trial: objective(trial, X, method)[0], n_trials=n_trials)
-    best_value, metric, reduction_method, reduction_params = objective(study.best_trial, X, method)
+    best_value, metric = objective(study.best_trial, X, method)
     best_params = study.best_trial.params
-    return best_params, best_value, metric, reduction_method, reduction_params
+    return best_params, best_value, metric
 
 
 if __name__ == '__main__':
-    df = pd.read_csv('preprocessed/prepared_data.csv')
+    df = pd.read_csv('preprocessed/prepared_data_nonumap.csv')
     X = df.drop(columns=['КОД3 основной']).values
 
     methods = ['KMeans', 'DBSCAN', 'GaussianMixture', 'AgglomerativeClustering',
@@ -198,9 +190,8 @@ if __name__ == '__main__':
     exp_results = []
 
     results = Parallel(n_jobs=-1)(delayed(run_experiment)(X, m) for m in methods)
-    for method, (params, score, metric, reduction_method, reduction_params) in zip(methods, results):
+    for method, (params, score, metric) in zip(methods, results):
         exp_results.append(
-            {'method': method, 'params': params, 'score': score, 'metric': metric, 'reduction_method': reduction_method,
-             'reduction_params': reduction_params})
+            {'method': method, 'params': params, 'score': score, 'metric': metric})
 
-    pd.DataFrame(exp_results).to_csv('clustering_results.csv', index=False)
+    pd.DataFrame(exp_results).to_csv('clustering_results_1.csv', index=False)
