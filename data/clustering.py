@@ -8,16 +8,17 @@ from sklearn.cluster import (KMeans, DBSCAN, AgglomerativeClustering, SpectralCl
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score, calinski_harabasz_score
 from sklearn.mixture import GaussianMixture
+from sklearn.preprocessing import StandardScaler
 import warnings
 warnings.filterwarnings("ignore")
 
 
 def cluster_penalty(labels, n_samples):
     valid = labels[labels >= 0]
-    if valid.size < 2:
+    if valid.size == 0:
         return 1e6
     counts = np.bincount(valid)
-    return sum(1 for c in counts if c < 0.05 * n_samples or c > 0.8 * n_samples)
+    return sum(1e6 for c in counts if c < 0.1 * n_samples or c > 0.75 * n_samples)
 
 
 def cluster_evaluation(X, model, method_name):
@@ -29,7 +30,7 @@ def cluster_evaluation(X, model, method_name):
             raw = model.score(X)
         else:
             labels = model.fit_predict(X)
-            unique_labels = np.unique(labels)
+            unique_labels = np.unique(labels[labels >= 0])
             if len(unique_labels) < 2 or len(unique_labels) >= n_samples:
                 return -1e6, 'error'
 
@@ -51,17 +52,21 @@ def cluster_evaluation(X, model, method_name):
 
 
 def apply_dimensionality_reduction(X, method, trial):
+    scaler = StandardScaler()
+    max_components = min(X.shape[0], X.shape[1], 200)
     if method == 'PCA':
-        n_components = trial.suggest_int('pca_n_components', 2, X.shape[1])
+        n_components = trial.suggest_int('pca_n_components', 2, max_components)
         pca = PCA(n_components=n_components, random_state=42)
-        return pca.fit_transform(X)
+        X_reduced = pca.fit_transform(X)
+        return scaler.fit_transform(X_reduced)
     elif method == 'UMAP':
-        n_components = trial.suggest_int('umap_n_components', 2, X.shape[1])
-        n_neighbors = trial.suggest_int('umap_n_neighbors', 5, 50)
+        n_components = trial.suggest_int('umap_n_components', 2, max_components)
+        n_neighbors = trial.suggest_int('umap_n_neighbors', 2, 100)
         min_dist = trial.suggest_float('umap_min_dist', 0.001, 0.9)
         umap_model = umap.UMAP(n_components=n_components, n_neighbors=n_neighbors, min_dist=min_dist, random_state=42)
-        return umap_model.fit_transform(X)
-    return X
+        X_reduced = umap_model.fit_transform(X)
+        return scaler.fit_transform(X_reduced)
+    return scaler.fit_transform(X)
 
 
 def objective(trial, X, method):
@@ -106,8 +111,7 @@ def objective(trial, X, method):
     elif method == 'AgglomerativeClustering':
         params = {
             'n_clusters': trial.suggest_int('n_clusters', 3, 50),
-            'linkage': trial.suggest_categorical('linkage', ['ward', 'complete', 'average', 'single']),
-            'compute_distances': trial.suggest_categorical('compute_distances', [True, False])
+            'linkage': trial.suggest_categorical('linkage', ['ward', 'complete', 'average', 'single'])
         }
         model = AgglomerativeClustering(**params)
 
@@ -124,8 +128,7 @@ def objective(trial, X, method):
         params = {
             'threshold': trial.suggest_float('threshold', 0.01, 5.0, log=True),
             'branching_factor': trial.suggest_int('branching_factor', 10, 200),
-            'n_clusters': trial.suggest_int('n_clusters', 3, 50),
-            'compute_labels': trial.suggest_categorical('compute_labels', [True, False])
+            'n_clusters': trial.suggest_int('n_clusters', 3, 50)
         }
         model = Birch(**params)
 
@@ -160,7 +163,7 @@ def objective(trial, X, method):
         params = {
             'min_cluster_size': trial.suggest_int('min_cluster_size', 5, 200),
             'min_samples': trial.suggest_int('min_samples', 1, 100),
-            'cluster_selection_epsilon': trial.suggest_float('cluster_selection_epsilon', 0.0, 5.0),
+            'cluster_selection_epsilon': trial.suggest_float('cluster_selection_epsilon', 0.0, 25.0),
             'metric': trial.suggest_categorical('metric', ['euclidean', 'manhattan', 'cosine', 'chebyshev'])
         }
         model = HDBSCAN(**params)
