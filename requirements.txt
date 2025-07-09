@@ -1,0 +1,30 @@
+# Core data science libraries
+numpy>=1.21.0
+pandas>=1.3.0
+scikit-learn>=1.0.0
+
+# Clustering algorithms
+hdbscan>=0.8.27
+
+# Dimensionality reduction
+umap-learn>=0.5.3
+
+# Hyperparameter optimization
+optuna>=3.0.0
+
+# Parallel processing
+joblib>=1.1.0
+
+# Data visualization
+matplotlib>=3.5.0
+seaborn>=0.11.0
+
+# Jupyter notebooks
+jupyter>=1.0.0
+ipykernel>=6.0.0
+
+# Excel file handling
+openpyxl>=3.0.9
+
+# Additional utilities
+tqdm>=4.62.0
